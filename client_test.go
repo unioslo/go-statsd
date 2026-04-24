@@ -109,7 +109,10 @@ func TestClose_DrainsAllQueued(t *testing.T) {
 	for i := 0; i < n; i++ {
 		client.Increment("test.metric")
 	}
-	client.Close() // must wait until all n metrics are sent
+	// Close() waits for the worker goroutine to finish all conn.Write() calls.
+	// On loopback UDP, Write() places bytes directly into the kernel receive buffer —
+	// no network hop — so all packets are readable as soon as Close() returns.
+	client.Close()
 
 	received := 0
 	if err := server.SetReadDeadline(time.Now().Add(time.Second)); err != nil {

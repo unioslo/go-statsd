@@ -11,11 +11,12 @@ const defaultBufferSize = 256
 
 // Client is a StatsD UDP client. A nil *Client is safe to use; all methods become no-ops.
 type Client struct {
-	conn   *net.UDPConn
-	prefix string
-	logger *slog.Logger
-	queue  chan string
-	wg     sync.WaitGroup
+	conn      *net.UDPConn
+	prefix    string
+	logger    *slog.Logger
+	queue     chan string
+	wg        sync.WaitGroup
+	closeOnce sync.Once
 }
 
 // Option configures a Client.
@@ -101,11 +102,16 @@ func (c *Client) Increment(metric string) {
 }
 
 // Close drains the send queue, waits for the worker goroutine to finish, then closes the UDP connection.
+// Safe to call more than once; subsequent calls are no-ops.
 func (c *Client) Close() error {
 	if c == nil {
 		return nil
 	}
-	close(c.queue)
-	c.wg.Wait()
-	return c.conn.Close()
+	var err error
+	c.closeOnce.Do(func() {
+		close(c.queue)
+		c.wg.Wait()
+		err = c.conn.Close()
+	})
+	return err
 }
