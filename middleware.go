@@ -24,6 +24,7 @@ func (c *Client) Middleware(next http.Handler, ignoredPaths ...string) http.Hand
 			return
 		}
 
+		// 1xx informational responses produce no metric.
 		switch {
 		case rw.statusCode >= 200 && rw.statusCode < 400:
 			c.Increment("server.request.success")
