@@ -102,6 +102,9 @@ func (c *Client) Increment(metric string) {
 
 // Close drains the send queue, waits for the worker goroutine to finish, then closes the UDP connection.
 func (c *Client) Close() error {
+	if c == nil {
+		return nil
+	}
 	close(c.queue)
 	c.wg.Wait()
 	return c.conn.Close()
