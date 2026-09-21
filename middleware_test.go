@@ -125,6 +125,30 @@ func TestMiddleware_IgnoredPath_SendsNoMetric(t *testing.T) {
 	}
 }
 
+func TestMiddleware_SkipErrorMetric_CountsAsSuccess(t *testing.T) {
+	client, server := newClientAndServer(t)
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gostatsd.SkipErrorMetric(r.Context())
+		w.WriteHeader(http.StatusForbidden)
+	})
+	wrapped := client.Middleware(handler)
+
+	req := httptest.NewRequest("GET", "/test", nil)
+	rec := httptest.NewRecorder()
+	wrapped.ServeHTTP(rec, req)
+	client.Close()
+
+	got := readPacket(t, server)
+	want := "server.request.success:1|c"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("expected client to still receive 403, got %d", rec.Code)
+	}
+}
+
 func TestMiddleware_NilClient_PassesThrough(t *testing.T) {
 	var client *gostatsd.Client // nil — no statsd configured
 
