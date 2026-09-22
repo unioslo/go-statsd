@@ -29,7 +29,7 @@ func TestMiddleware_2xx_IncrementsSuccess(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	wrapped := client.Middleware(handler)
+	wrapped := client.Middleware(handler, gostatsd.MiddlewareConfig{})
 
 	req := httptest.NewRequest("GET", "/test", nil)
 	rec := httptest.NewRecorder()
@@ -49,7 +49,7 @@ func TestMiddleware_4xx_Increments4xx(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 	})
-	wrapped := client.Middleware(handler)
+	wrapped := client.Middleware(handler, gostatsd.MiddlewareConfig{})
 
 	req := httptest.NewRequest("GET", "/test", nil)
 	rec := httptest.NewRecorder()
@@ -69,7 +69,7 @@ func TestMiddleware_5xx_Increments5xx(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	})
-	wrapped := client.Middleware(handler)
+	wrapped := client.Middleware(handler, gostatsd.MiddlewareConfig{})
 
 	req := httptest.NewRequest("GET", "/test", nil)
 	rec := httptest.NewRecorder()
@@ -89,7 +89,7 @@ func TestMiddleware_DefaultsTo200_IncrementsSuccess(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("ok")) // no WriteHeader call — should default to 200
 	})
-	wrapped := client.Middleware(handler)
+	wrapped := client.Middleware(handler, gostatsd.MiddlewareConfig{})
 
 	req := httptest.NewRequest("GET", "/test", nil)
 	rec := httptest.NewRecorder()
@@ -109,7 +109,9 @@ func TestMiddleware_IgnoredPath_SendsNoMetric(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	wrapped := client.Middleware(handler, "/.well-known/live", "/.well-known/ready", "/health")
+	wrapped := client.Middleware(handler, gostatsd.MiddlewareConfig{
+		IgnoredPaths: []string{"/.well-known/live", "/.well-known/ready", "/health"},
+	})
 
 	req := httptest.NewRequest("GET", "/.well-known/live", nil)
 	rec := httptest.NewRecorder()
@@ -132,7 +134,7 @@ func TestMiddleware_SkipErrorMetric_CountsAsSuccess(t *testing.T) {
 		gostatsd.SkipErrorMetric(r.Context())
 		w.WriteHeader(http.StatusForbidden)
 	})
-	wrapped := client.Middleware(handler)
+	wrapped := client.Middleware(handler, gostatsd.MiddlewareConfig{})
 
 	req := httptest.NewRequest("GET", "/test", nil)
 	rec := httptest.NewRecorder()
@@ -149,6 +151,30 @@ func TestMiddleware_SkipErrorMetric_CountsAsSuccess(t *testing.T) {
 	}
 }
 
+func TestMiddleware_CustomMetrics_UsesConfiguredNames(t *testing.T) {
+	client, server := newClientAndServer(t)
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+	wrapped := client.Middleware(handler, gostatsd.MiddlewareConfig{
+		MetricSuccess: "myapp.ok",
+		Metric4xx:     "myapp.client_error",
+		Metric5xx:     "myapp.server_error",
+	})
+
+	req := httptest.NewRequest("GET", "/test", nil)
+	rec := httptest.NewRecorder()
+	wrapped.ServeHTTP(rec, req)
+	client.Close()
+
+	got := readPacket(t, server)
+	want := "myapp.server_error:1|c"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
 func TestMiddleware_NilClient_PassesThrough(t *testing.T) {
 	var client *gostatsd.Client // nil — no statsd configured
 
@@ -157,7 +183,7 @@ func TestMiddleware_NilClient_PassesThrough(t *testing.T) {
 		called = true
 		w.WriteHeader(http.StatusOK)
 	})
-	wrapped := client.Middleware(handler)
+	wrapped := client.Middleware(handler, gostatsd.MiddlewareConfig{})
 
 	req := httptest.NewRequest("GET", "/test", nil)
 	rec := httptest.NewRecorder()
